@@ -262,6 +262,7 @@ def prepare_AMR(
     bin_margin: float = 1e-7,
     n_bins: int = 10,
     half_precision: bool = False,
+    keep_data_templates_normalized: bool = False,
 ) -> AMR_args:
     """
     Precompute all arguments necessary to get Angular Mode Removal in :py:func:`mock_survey_catalog`.
@@ -280,6 +281,9 @@ def prepare_AMR(
         Number of bins for each template in the regression, by default 10
     half_precision : bool, optional
         Whether to store normalized templates as ``float16`` and digitized templates at ``int16`` in the returned ``AMR_args`` to save space. False by default.
+    keep_data_templates_normalized : bool, optional
+        Keep the normalized data templates even if ``apply_to="randoms"`` (needed to use the data as randoms, e.g. the disjoint halves of
+        :py:func:`desiwinds.planewave.halves_from_split` and :py:func:`desiwinds.planewave.prepare_halves_effects`). False by default.
 
     Returns
     -------
@@ -347,7 +351,7 @@ def prepare_AMR(
     data_regions = jnp.stack(data_regions)
     randoms_regions = jnp.stack(randoms_regions)
 
-    if not apply_to == "data":
+    if apply_to != "data" and not keep_data_templates_normalized:
         data_templates_normalized = None
 
     data_coverage = data_regions.sum(axis=0)
@@ -372,7 +376,7 @@ def prepare_AMR(
     randoms_isort = local_argsort(randoms_templates_digitized, axis=1, sharding_mesh=sharding_mesh)
 
     if half_precision:
-        if apply_to == "data":
+        if data_templates_normalized is not None:
             data_templates_normalized = data_templates_normalized.astype(jnp.float16)
         randoms_templates_normalized = randoms_templates_normalized.astype(jnp.float16)
         data_templates_digitized = data_templates_digitized.astype(jnp.int16)
