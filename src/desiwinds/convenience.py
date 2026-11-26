@@ -9,7 +9,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from astropy.table import Table
-from jaxpower import MeshAttrs, ParticleField
+from jaxpower import FKPField, MeshAttrs, ParticleField
 from jaxpower.types import ObservableLeaf, ObservableTree
 
 from .utils import get_clustering_positions_weights
@@ -425,6 +425,52 @@ def split_into_fields(
         backend=backend,
     )
     return data, randoms, mask_is_data
+
+
+def split_into_halves(
+    positions: np.ndarray,
+    weights: np.ndarray,
+    extra: dict[str, np.ndarray] | None,
+    split_seed: int,
+    mattrs: MeshAttrs,
+    backend: Literal["jax", "mpi"] = "jax",
+    exchange: bool = True,
+) -> tuple[FKPField, FKPField]:
+    """
+    Split particles into two disjoint halves, each used as both data and randoms, for the plane-wave window.
+
+    The cross-response of the two halves (pass them as one pair to :py:func:`desiwinds.planewave.get_planewave_responses`, with the effect arguments prepared on each half by :py:func:`desiwinds.planewave.prepare_halves_effects`) has no self-pair term, since no particle is in both legs, and no sampling noise of a data / randoms split, since in each half the unclustered field is exactly zero. The split is that of :py:func:`split_into_fields` with half of the particles as "data".
+
+    Parameters
+    ----------
+    positions : np.ndarray
+        Particle positions.
+    weights : np.ndarray
+        Particle weights.
+    extra : dict[str, np.ndarray] | None
+        Particle extra attributes, if any: redshift, template values, FKP weights...
+    split_seed : int
+        Seed to use for the split into two halves.
+    mattrs : MeshAttrs
+        Mesh attributes for the fields.
+    backend : Literal["jax", "mpi"], optional
+        Backend to use for exchanging particles (if any), by default "jax"
+    exchange : bool, optional
+        Whether to exchange particles, by default True
+
+    Returns
+    -------
+    tuple[FKPField, FKPField]
+        The two halves, each an FKP field whose data and randoms are the same particles.
+
+    Notes
+    -----
+    Each particle goes to either half with probability 1/2, so the halves have about, but not exactly, the same size. As in :py:func:`split_into_fields`, the input arrays are global: the particles are distributed by the exchange.
+    """
+    half_a, half_b, _ = split_into_fields(
+        positions, weights, extra, data_size=weights.size // 2, split_seed=split_seed, mattrs=mattrs, backend=backend, exchange=exchange
+    )
+    return FKPField(half_a, half_a, attrs=mattrs), FKPField(half_b, half_b, attrs=mattrs)
 
 
 def mesh_union(mattrs1: MeshAttrs, mattrs2: MeshAttrs) -> tuple[jax.Array, jax.Array]:
